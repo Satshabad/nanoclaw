@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import crypto from 'crypto';
+import { viewCart, checkout } from './kroger-browser.js';
 
 const KROGER_BASE_URL = 'https://api.kroger.com/v1';
 const AUTH_FILE = '/workspace/group/.kroger-auth.json';
@@ -301,7 +302,7 @@ server.tool(
 
     const summary = args.items.map(i => `  ${i.upc} x${i.quantity}`).join('\n');
     return {
-      content: [{ type: 'text' as const, text: `Added to cart:\n${summary}\n\nItems are now in your Kroger cart. Use agent-browser to navigate to fredmeyer.com/cart to review and check out.` }],
+      content: [{ type: 'text' as const, text: `Added to cart:\n${summary}\n\nItems are now in your Kroger cart. Use kroger_view_cart to review the cart, then kroger_checkout to complete the order.` }],
     };
   },
 );
@@ -312,7 +313,7 @@ server.tool(
   {
     zipCode: z.string().describe('ZIP code to search near'),
     limit: z.number().min(1).max(25).default(5).describe('Max results'),
-    chain: z.string().default('FRED MEYER').describe('Chain name filter (default: FRED MEYER). Use "KROGER" for Kroger stores.'),
+    chain: z.string().default('FRED').describe('Chain name filter (default: FRED). Use "KROGER" for Kroger stores.'),
   },
   async (args) => {
     let endpoint = `/locations?filter.zipCode.near=${args.zipCode}&filter.limit=${args.limit}`;
@@ -504,6 +505,118 @@ server.tool(
     }
 
     return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  },
+);
+
+server.tool(
+  'kroger_view_cart',
+  `View the contents of your Fred Meyer / Kroger cart. Uses Stagehand (AI browser automation) to navigate fredmeyer.com/cart and extract item details.
+
+Returns structured cart data: item names, quantities, prices, subtotal, and estimated total.
+
+If the user is not logged in, returns a login_required error — use agent-browser to sign in first, then retry.
+
+Note: The Kroger API cannot view cart contents, so this uses browser automation. First call may take ~15-30 seconds (AI-powered). Subsequent calls are faster (cached selectors).`,
+  {},
+  async () => {
+    try {
+      const result = await viewCart();
+
+      if (!result.success) {
+        const errorMsg =
+          result.errorType === 'login_required'
+            ? 'Not logged in to Fred Meyer. Please use agent-browser to sign in at fredmeyer.com first, then call kroger_view_cart again.'
+            : `Failed to view cart: ${result.message}`;
+        return { content: [{ type: 'text' as const, text: errorMsg }], isError: true };
+      }
+
+      if (!result.items || result.items.length === 0) {
+        return {
+          content: [{ type: 'text' as const, text: 'Your Fred Meyer cart is empty.' }],
+        };
+      }
+
+      const lines = result.items.map(
+        (item, i) => `${i + 1}. ${item.name} x${item.quantity} — ${item.price}`,
+      );
+      lines.push('');
+      lines.push(`Subtotal: ${result.subtotal}`);
+      lines.push(`Estimated Total: ${result.estimatedTotal}`);
+
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Cart viewing failed unexpectedly: ${err instanceof Error ? err.message : String(err)}. You can fall back to agent-browser to view the cart at fredmeyer.com/cart.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'kroger_checkout',
+  `Complete the checkout process on Fred Meyer / Kroger. Uses Stagehand (AI browser automation) to navigate the checkout flow.
+
+IMPORTANT: Only call this AFTER the user has reviewed their cart (via kroger_view_cart) and given explicit approval to proceed.
+
+The checkout flow:
+1. Navigates to cart
+2. Clicks checkout
+3. Selects fulfillment method (pickup or delivery)
+4. Picks the earliest available time slot
+5. Uses the saved payment method on the account
+6. Places the order
+7. Screenshots the confirmation
+
+Returns order number, pickup/delivery time, total, and screenshot path.
+
+First call may take ~30-60 seconds (AI-powered checkout steps). Subsequent checkouts are faster (cached action selectors).`,
+  {
+    fulfillment: z
+      .enum(['pickup', 'delivery'])
+      .default('pickup')
+      .describe('Fulfillment method: "pickup" (default) or "delivery"'),
+  },
+  async (args) => {
+    try {
+      const result = await checkout({ fulfillment: args.fulfillment });
+
+      if (!result.success) {
+        const errorMsg =
+          result.errorType === 'login_required'
+            ? 'Not logged in to Fred Meyer. Please use agent-browser to sign in at fredmeyer.com first, then retry checkout.'
+            : `Checkout failed: ${result.message}\n\nYou can fall back to agent-browser to complete checkout manually at fredmeyer.com/cart.`;
+        return { content: [{ type: 'text' as const, text: errorMsg }], isError: true };
+      }
+
+      const lines = [
+        'Order placed successfully!',
+        '',
+        `Order Number: ${result.orderNumber}`,
+        result.pickupTime ? `Pickup Time: ${result.pickupTime}` : null,
+        `Total: ${result.total}`,
+        result.screenshotPath
+          ? `\nConfirmation screenshot saved to: ${result.screenshotPath}`
+          : null,
+      ].filter(Boolean);
+
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Checkout failed unexpectedly: ${err instanceof Error ? err.message : String(err)}. You can fall back to agent-browser to complete checkout at fredmeyer.com/cart.`,
+          },
+        ],
+        isError: true,
+      };
+    }
   },
 );
 
