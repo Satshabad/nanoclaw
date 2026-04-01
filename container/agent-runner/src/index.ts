@@ -409,7 +409,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__kroger__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -425,6 +426,16 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...(process.env.KROGER_CLIENT_ID ? {
+          kroger: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'kroger-mcp-stdio.js')],
+            env: {
+              KROGER_CLIENT_ID: process.env.KROGER_CLIENT_ID || '',
+              KROGER_CLIENT_SECRET: process.env.KROGER_CLIENT_SECRET || '',
+            },
+          },
+        } : {}),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],

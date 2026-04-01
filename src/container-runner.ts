@@ -231,6 +231,12 @@ function buildContainerArgs(
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
+  // Forward Kroger API credentials if configured (app-level identifiers, not user secrets)
+  if (process.env.KROGER_CLIENT_ID) {
+    args.push('-e', `KROGER_CLIENT_ID=${process.env.KROGER_CLIENT_ID}`);
+    args.push('-e', `KROGER_CLIENT_SECRET=${process.env.KROGER_CLIENT_SECRET || ''}`);
+  }
+
   // Route API traffic through the credential proxy (containers never see real secrets)
   args.push(
     '-e',

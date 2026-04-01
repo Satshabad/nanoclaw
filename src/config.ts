@@ -7,7 +7,7 @@ import { isValidTimezone } from './timezone.js';
 // Read config values from .env (falls back to process.env).
 // Secrets (API keys, tokens) are NOT read here — they are loaded only
 // by the credential proxy (credential-proxy.ts), never exposed to containers.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'TZ']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'TZ', 'KROGER_CLIENT_ID', 'KROGER_CLIENT_SECRET']);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
@@ -79,6 +79,12 @@ export function getTriggerPattern(trigger?: string): RegExp {
 }
 
 export const TRIGGER_PATTERN = buildTriggerPattern(DEFAULT_TRIGGER);
+
+// Kroger/Fred Meyer API credentials (app-level identifiers from developer.kroger.com)
+export const KROGER_CLIENT_ID =
+  process.env.KROGER_CLIENT_ID || envConfig.KROGER_CLIENT_ID || '';
+export const KROGER_CLIENT_SECRET =
+  process.env.KROGER_CLIENT_SECRET || envConfig.KROGER_CLIENT_SECRET || '';
 
 // Timezone for scheduled tasks, message formatting, etc.
 // Validates each candidate is a real IANA identifier before accepting.
